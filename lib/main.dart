@@ -2,8 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'Screens/auth/auth_routes.dart';
+import 'Screens/auth/forgot_password_screen.dart';
 import 'Screens/auth/login_screen.dart';
+import 'Screens/auth/new_password_screen.dart';
+import 'Screens/auth/password_reset_success_screen.dart';
 import 'Screens/auth/register_screen.dart';
+import 'Screens/auth/verification_code_screen.dart';
 import 'Screens/auth/welcome_screen.dart';
 import 'Screens/onboarding/onboarding_screen.dart';
 
@@ -51,6 +55,11 @@ class CharginiApp extends StatelessWidget {
         AuthRoutes.welcome: (_) => const WelcomeScreen(),
         AuthRoutes.login: (_) => const LoginScreen(),
         AuthRoutes.register: (_) => const RegisterScreen(),
+        AuthRoutes.forgotPassword: (_) => const ForgotPasswordScreen(),
+        AuthRoutes.verificationCode: (_) => const VerificationCodeScreen(),
+        AuthRoutes.newPassword: (_) => const NewPasswordScreen(),
+        AuthRoutes.passwordResetSuccess: (_) =>
+            const PasswordResetSuccessScreen(),
       },
       home: showOnboarding
           ? OnboardingScreen(

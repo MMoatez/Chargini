@@ -1,6 +1,10 @@
 import 'dart:convert';
 
 import 'package:chargini/DTOs/register_user_dto.dart';
+import 'package:chargini/DTOs/forgot_password_dto.dart';
+import 'package:chargini/DTOs/login_dto.dart';
+import 'package:chargini/DTOs/reset_password_dto.dart';
+import 'package:chargini/DTOs/verify_reset_code_dto.dart';
 import 'package:chargini/Services/user_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -77,5 +81,104 @@ void main() {
         ),
       ),
     );
+  });
+
+  test('requestPasswordReset posts the normalized email', () async {
+    final client = MockClient((request) async {
+      expect(request.method, 'POST');
+      expect(request.url.toString(), 'http://api.test/users/forgot-password');
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      expect(body['email'], 'yassin@example.com');
+      return http.Response(
+        jsonEncode({'message': 'Code envoyé'}),
+        201,
+        headers: {'content-type': 'application/json'},
+      );
+    });
+    final service = UserService(client: client, baseUrl: 'http://api.test');
+
+    await service.requestPasswordReset(
+      const ForgotPasswordDto(email: ' YASSIN@EXAMPLE.COM '),
+    );
+  });
+
+  test('verifyPasswordResetCode returns the reset token', () async {
+    final client = MockClient((request) async {
+      expect(
+        request.url.toString(),
+        'http://api.test/users/verify-reset-code',
+      );
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      expect(body, {'email': 'yassin@example.com', 'code': '123456'});
+      return http.Response(
+        jsonEncode({'resetToken': 'reset-token'}),
+        201,
+        headers: {'content-type': 'application/json'},
+      );
+    });
+    final service = UserService(client: client, baseUrl: 'http://api.test');
+
+    final token = await service.verifyPasswordResetCode(
+      const VerifyResetCodeDto(
+        email: 'yassin@example.com',
+        code: '123456',
+      ),
+    );
+
+    expect(token, 'reset-token');
+  });
+
+  test('resetPassword posts the token and new password', () async {
+    final client = MockClient((request) async {
+      expect(request.url.toString(), 'http://api.test/users/reset-password');
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      expect(body, {
+        'resetToken': 'reset-token',
+        'newPassword': 'NewPassword123!',
+      });
+      return http.Response(
+        jsonEncode({'message': 'Mot de passe réinitialisé'}),
+        201,
+        headers: {'content-type': 'application/json'},
+      );
+    });
+    final service = UserService(client: client, baseUrl: 'http://api.test');
+
+    await service.resetPassword(
+      const ResetPasswordDto(
+        resetToken: 'reset-token',
+        newPassword: 'NewPassword123!',
+      ),
+    );
+  });
+
+  test('login returns the JWT access token', () async {
+    final client = MockClient((request) async {
+      expect(request.method, 'POST');
+      expect(request.url.toString(), 'http://api.test/users/login');
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      expect(body, {
+        'email': 'yassin@example.com',
+        'password': 'NewPassword123!',
+      });
+      return http.Response(
+        jsonEncode({
+          'accessToken': 'jwt-token',
+          'user': {'email': 'yassin@example.com'},
+        }),
+        201,
+        headers: {'content-type': 'application/json'},
+      );
+    });
+    final service = UserService(client: client, baseUrl: 'http://api.test');
+
+    final response = await service.login(
+      const LoginDto(
+        email: 'YASSIN@EXAMPLE.COM',
+        password: 'NewPassword123!',
+      ),
+    );
+
+    expect(response['accessToken'], 'jwt-token');
   });
 }

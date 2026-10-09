@@ -30,6 +30,21 @@ export class User {
 
   @Prop({ required: true, select: false })
   passwordHash: string;
+
+  @Prop({ select: false })
+  passwordResetCodeHash?: string;
+
+  @Prop({ select: false })
+  passwordResetCodeExpiresAt?: Date;
+
+  @Prop({ select: false, default: 0 })
+  passwordResetCodeAttempts?: number;
+
+  @Prop({ select: false })
+  passwordResetTokenHash?: string;
+
+  @Prop({ select: false })
+  passwordResetTokenExpiresAt?: Date;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

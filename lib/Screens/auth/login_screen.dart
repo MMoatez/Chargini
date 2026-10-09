@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../DTOs/login_dto.dart';
+import '../../Services/user_service.dart';
 import '../../UI_Components/chargini_auth_components.dart';
 import 'auth_routes.dart';
 
@@ -12,16 +15,64 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _userService = UserService();
   bool _obscurePassword = true;
   bool _rememberMe = true;
+  bool _isSubmitting = false;
 
-  void _submit() {
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Le formulaire est prêt pour la connexion au backend.'),
-      ),
-    );
+    setState(() => _isSubmitting = true);
+    try {
+      final response = await _userService.login(
+        LoginDto(
+          email: _emailController.text,
+          password: _passwordController.text,
+        ),
+      );
+      final token = response['accessToken']?.toString();
+      if (token == null || token.isEmpty) {
+        throw const UserServiceException('Jeton de connexion manquant.');
+      }
+
+      final preferences = await SharedPreferences.getInstance();
+      if (_rememberMe) {
+        await preferences.setString('auth_access_token', token);
+      } else {
+        await preferences.remove('auth_access_token');
+      }
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Connexion réussie.'),
+          backgroundColor: CharginiColors.green,
+        ),
+      );
+    } on UserServiceException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.message)));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Connexion au serveur impossible.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
   }
 
   @override
@@ -84,6 +135,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         SizedBox(height: compact ? 18 : 26),
                         TextFormField(
+                          controller: _emailController,
                           keyboardType: TextInputType.emailAddress,
                           decoration: charginiInputDecoration(
                             hintText: 'Adresse e-mail',
@@ -99,6 +151,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         const SizedBox(height: 14),
                         TextFormField(
+                          controller: _passwordController,
                           obscureText: _obscurePassword,
                           decoration: charginiInputDecoration(
                             hintText: 'Mot de passe',
@@ -122,8 +175,9 @@ class _LoginScreenState extends State<LoginScreen> {
                         Align(
                           alignment: Alignment.centerRight,
                           child: TextButton(
-                            onPressed: () => _showComingSoon(
-                              'La récupération du mot de passe sera connectée au backend.',
+                            onPressed: () => Navigator.pushNamed(
+                              context,
+                              AuthRoutes.forgotPassword,
                             ),
                             style: TextButton.styleFrom(
                               foregroundColor: CharginiColors.green,
@@ -153,53 +207,13 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         const SizedBox(height: 10),
                         CharginiPrimaryButton(
-                          label: 'Se connecter',
-                          onPressed: _submit,
+                          label: _isSubmitting
+                              ? 'Connexion en cours...'
+                              : 'Se connecter',
+                          onPressed: _isSubmitting ? null : _submit,
+                          showArrow: !_isSubmitting,
                         ),
-                        const SizedBox(height: 22),
-                        const AuthDivider(),
-                        const SizedBox(height: 18),
-                        SizedBox(
-                          width: double.infinity,
-                          height: 58,
-                          child: OutlinedButton(
-                            onPressed: () => _showComingSoon(
-                              'La connexion Google sera ajoutée prochainement.',
-                            ),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: CharginiColors.navy,
-                              side: const BorderSide(
-                                color: CharginiColors.border,
-                                width: 1.4,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(18),
-                              ),
-                            ),
-                            child: const Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(
-                                  'G',
-                                  style: TextStyle(
-                                    color: Color(0xFF4285F4),
-                                    fontSize: 24,
-                                    fontWeight: FontWeight.w900,
-                                  ),
-                                ),
-                                SizedBox(width: 14),
-                                Text(
-                                  'Continuer avec Google',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 22),
+                        const SizedBox(height: 24),
                         AuthFooterLink(
                           prefix: 'Vous n’avez pas de compte ? ',
                           action: 'Créer un compte',
@@ -220,9 +234,4 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  void _showComingSoon(String message) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
-  }
 }
