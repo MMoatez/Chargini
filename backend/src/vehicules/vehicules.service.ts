@@ -28,8 +28,11 @@ export class VehiculesService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
+    const legacyConnectorFilter = {
+      connector: { $in: ['Type 2', 'type 2', 'TYPE 2'] },
+    } as never;
     await this.vehiculeModel.updateMany(
-      { connector: { $in: ['Type 2', 'type 2', 'TYPE 2'] } },
+      legacyConnectorFilter,
       { $set: { connector: VehiculeConnector.Mennekes } },
     );
   }
