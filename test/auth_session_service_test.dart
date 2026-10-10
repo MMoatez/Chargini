@@ -53,7 +53,7 @@ void main() {
       authUserProfileKey:
           '{"_id":"user-1","firstName":"Yassine","lastName":"Jendoubi",'
           '"email":"yassine@example.com","phone":"+21654136655",'
-          '"birthDate":null,"role":"user","vehicleCount":0}',
+          '"birthDate":null,"role":"user","vehiculeCount":0}',
       authAccessExpiresAtKey: DateTime.now()
           .subtract(const Duration(minutes: 1))
           .millisecondsSinceEpoch,

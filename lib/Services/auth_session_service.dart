@@ -66,6 +66,15 @@ class AuthSession {
       rememberMe: rememberMe,
     );
   }
+
+  AuthSession withUser(UserProfileDto updatedUser) => AuthSession(
+    accessToken: accessToken,
+    refreshToken: refreshToken,
+    user: updatedUser,
+    accessTokenExpiresAt: accessTokenExpiresAt,
+    refreshTokenExpiresAt: refreshTokenExpiresAt,
+    rememberMe: rememberMe,
+  );
 }
 
 class AuthSessionService {

@@ -6,7 +6,9 @@ import '../../DTOs/user_profile_dto.dart';
 import '../../Services/auth_session_service.dart';
 import '../../Services/user_service.dart';
 import '../../UI_Components/chargini_auth_components.dart';
+import '../../UI_Components/chargini_bottom_navigation.dart';
 import '../auth/auth_routes.dart';
+import '../véhicules/vehicule_routes.dart';
 import 'user_routes.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -22,6 +24,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final UserService _userService = UserService();
   UserProfileDto? _user;
   bool _initialized = false;
+
+  @override
+  void initState() {
+    super.initState();
+    AuthSessionService.session.addListener(_handleSessionChanged);
+  }
+
+  void _handleSessionChanged() {
+    final currentUser = AuthSessionService.current?.user;
+    if (mounted && currentUser != null) setState(() => _user = currentUser);
+  }
+
+  @override
+  void dispose() {
+    AuthSessionService.session.removeListener(_handleSessionChanged);
+    super.dispose();
+  }
 
   @override
   void didChangeDependencies() {
@@ -125,7 +144,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
         ),
       ),
-      bottomNavigationBar: const _BottomNavigation(),
+      bottomNavigationBar: const CharginiBottomNavigation(),
     );
   }
 }
@@ -410,16 +429,16 @@ class _AccountCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final vehicles = user.vehicleCount == 1
+    final vehicules = user.vehiculeCount == 1
         ? '1 véhicule enregistré'
-        : '${user.vehicleCount} véhicules enregistrés';
+        : '${user.vehiculeCount} véhicules enregistrés';
     return _ProfileCard(
       children: [
         _ActionRow(
           icon: Icons.directions_car_outlined,
           title: 'Mes véhicules',
-          subtitle: vehicles,
-          onTap: () => _comingSoon(context, 'Mes véhicules'),
+          subtitle: vehicules,
+          onTap: () => Navigator.pushNamed(context, VehiculeRoutes.list),
         ),
         _ActionRow(
           icon: Icons.edit_outlined,
@@ -555,125 +574,6 @@ class _SquareIcon extends StatelessWidget {
   }
 }
 
-class _BottomNavigation extends StatelessWidget {
-  const _BottomNavigation();
-
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      top: false,
-      child: Container(
-        height: 88,
-        padding: const EdgeInsets.fromLTRB(8, 8, 8, 7),
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-          boxShadow: [
-            BoxShadow(
-              color: Color(0x17002C4D),
-              blurRadius: 22,
-              offset: Offset(0, -5),
-            ),
-          ],
-        ),
-        child: const Row(
-          children: [
-            _NavigationItem(icon: Icons.home_outlined, label: 'Accueil'),
-            _NavigationItem(icon: Icons.map_outlined, label: 'Carte'),
-            _NavigationItem(
-              icon: Icons.calendar_month_outlined,
-              label: 'Réservations',
-            ),
-            _NavigationItem(
-              icon: Icons.chat_bubble_outline_rounded,
-              label: 'Messages',
-              showNotification: true,
-            ),
-            _NavigationItem(
-              icon: Icons.person_outline_rounded,
-              label: 'Profil',
-              selected: true,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _NavigationItem extends StatelessWidget {
-  const _NavigationItem({
-    required this.icon,
-    required this.label,
-    this.selected = false,
-    this.showNotification = false,
-  });
-
-  final IconData icon;
-  final String label;
-  final bool selected;
-  final bool showNotification;
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Container(
-                width: 50,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: selected
-                      ? const Color(0xFFE9FBEF)
-                      : Colors.transparent,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Icon(
-                  icon,
-                  color: selected
-                      ? CharginiColors.green
-                      : CharginiColors.bodyText,
-                  size: 26,
-                ),
-              ),
-              if (showNotification)
-                const Positioned(
-                  top: 0,
-                  right: 2,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: CharginiColors.green,
-                      shape: BoxShape.circle,
-                    ),
-                    child: SizedBox.square(dimension: 8),
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 3),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text(
-              label,
-              style: TextStyle(
-                color: selected
-                    ? CharginiColors.green
-                    : CharginiColors.bodyText,
-                fontSize: 11,
-                fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 String _formatFrenchDate(DateTime? date) {
   if (date == null) return 'Non renseignée';
   const months = [
@@ -701,10 +601,4 @@ String _formatTunisianPhone(String phone) {
         '${local.substring(5)}';
   }
   return phone;
-}
-
-void _comingSoon(BuildContext context, String feature) {
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(content: Text('$feature sera ajouté à la prochaine étape.')),
-  );
 }

@@ -28,6 +28,9 @@ export class User {
   @Prop({ required: true, enum: UserRole, default: UserRole.User })
   role: UserRole;
 
+  @Prop({ default: 0, min: 0 })
+  vehiculeCount: number;
+
   @Prop({ required: true, select: false })
   passwordHash: string;
 

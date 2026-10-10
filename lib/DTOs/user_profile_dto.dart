@@ -7,7 +7,7 @@ class UserProfileDto {
     required this.phone,
     required this.birthDate,
     required this.role,
-    this.vehicleCount = 0,
+    this.vehiculeCount = 0,
   });
 
   factory UserProfileDto.fromJson(Map<String, dynamic> json) {
@@ -19,7 +19,7 @@ class UserProfileDto {
       phone: json['phone']?.toString() ?? '',
       birthDate: DateTime.tryParse(json['birthDate']?.toString() ?? ''),
       role: json['role']?.toString() ?? 'user',
-      vehicleCount: (json['vehicleCount'] as num?)?.toInt() ?? 0,
+      vehiculeCount: (json['vehiculeCount'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -30,9 +30,20 @@ class UserProfileDto {
   final String phone;
   final DateTime? birthDate;
   final String role;
-  final int vehicleCount;
+  final int vehiculeCount;
 
   String get fullName => '$firstName $lastName'.trim();
+
+  UserProfileDto copyWith({int? vehiculeCount}) => UserProfileDto(
+    id: id,
+    firstName: firstName,
+    lastName: lastName,
+    email: email,
+    phone: phone,
+    birthDate: birthDate,
+    role: role,
+    vehiculeCount: vehiculeCount ?? this.vehiculeCount,
+  );
 
   Map<String, dynamic> toJson() => {
     '_id': id,
@@ -42,7 +53,7 @@ class UserProfileDto {
     'phone': phone,
     'birthDate': birthDate?.toUtc().toIso8601String(),
     'role': role,
-    'vehicleCount': vehicleCount,
+    'vehiculeCount': vehiculeCount,
   };
 
   String get initials {

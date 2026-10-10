@@ -17,6 +17,8 @@ import 'Screens/user/edit_profile_screen.dart';
 import 'Screens/user/change_password_screen.dart';
 import 'Screens/user/delete_account_screen.dart';
 import 'Screens/user/user_routes.dart';
+import 'Screens/véhicules/vehicule_routes.dart';
+import 'Screens/véhicules/vehicules_screen.dart';
 
 const onboardingCompletedKey = 'onboarding_completed';
 
@@ -82,6 +84,7 @@ class CharginiApp extends StatelessWidget {
         UserRoutes.changePassword: (_) => const ChangePasswordScreen(),
         UserRoutes.verifyPasswordChange: (_) => const VerificationCodeScreen(),
         UserRoutes.deleteAccount: (_) => const DeleteAccountScreen(),
+        VehiculeRoutes.list: (_) => const VehiculesScreen(),
       },
       home: showOnboarding
           ? OnboardingScreen(
