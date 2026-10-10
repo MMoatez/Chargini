@@ -1,9 +1,13 @@
 import 'package:chargini/main.dart';
+import 'package:chargini/DTOs/user_profile_dto.dart';
+import 'package:chargini/Services/auth_session_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  setUp(() => AuthSessionService.session.value = null);
+
   testWidgets('shows onboarding on first launch', (tester) async {
     SharedPreferences.setMockInitialValues({});
     final preferences = await SharedPreferences.getInstance();
@@ -91,5 +95,77 @@ void main() {
     );
     expect(find.text('Prénom'), findsOneWidget);
     expect(find.text('Nom'), findsOneWidget);
+  });
+
+  testWidgets('opens forgot password from the welcome screen', (tester) async {
+    SharedPreferences.setMockInitialValues({onboardingCompletedKey: true});
+    final preferences = await SharedPreferences.getInstance();
+
+    await tester.pumpWidget(
+      CharginiApp(preferences: preferences, showOnboarding: false),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.text('Mot de passe oublié ?'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Mot de passe oublié ?'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        'Entrez votre adresse e-mail pour\nrecevoir un code de vérification.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Envoyer le code'), findsOneWidget);
+  });
+
+  testWidgets('remembered user opens the profile and can log out', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({onboardingCompletedKey: true});
+    final preferences = await SharedPreferences.getInstance();
+    final session = AuthSession(
+      accessToken: 'jwt-token',
+      refreshToken: List.filled(96, 'r').join(),
+      user: const UserProfileDto(
+        id: 'user-1',
+        firstName: 'Yassine',
+        lastName: 'Jendoubi',
+        email: 'yassine@example.com',
+        phone: '+21654136655',
+        birthDate: null,
+        role: 'user',
+      ),
+      accessTokenExpiresAt: DateTime.now().add(const Duration(minutes: 30)),
+      refreshTokenExpiresAt: DateTime.now().add(const Duration(days: 30)),
+      rememberMe: true,
+    );
+    await AuthSessionService.activate(session);
+
+    await tester.pumpWidget(
+      CharginiApp(
+        preferences: preferences,
+        showOnboarding: false,
+        rememberedSession: session,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Mon compte'), findsOneWidget);
+    expect(find.text('Yassine Jendoubi'), findsOneWidget);
+
+    await tester.scrollUntilVisible(
+      find.text('Se déconnecter'),
+      450,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.drag(find.byType(ListView), const Offset(0, -160));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Se déconnecter'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Se connecter'), findsWidgets);
+    expect(preferences.getString(authAccessTokenKey), isNull);
   });
 }

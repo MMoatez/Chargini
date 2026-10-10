@@ -49,14 +49,48 @@ class UserService {
     return responseBody;
   }
 
-  Future<Map<String, dynamic>> requestPasswordReset(
-    ForgotPasswordDto dto,
-  ) {
+  Future<Map<String, dynamic>> requestPasswordReset(ForgotPasswordDto dto) {
     return _post('/users/forgot-password', dto.toJson());
   }
 
   Future<Map<String, dynamic>> login(LoginDto dto) {
     return _post('/users/login', dto.toJson());
+  }
+
+  Future<Map<String, dynamic>> refreshSession(String refreshToken) {
+    return _post('/users/refresh-token', {'refreshToken': refreshToken});
+  }
+
+  Future<void> logout(String refreshToken) async {
+    await _post('/users/logout', {'refreshToken': refreshToken});
+  }
+
+  Future<Map<String, dynamic>> requestPasswordChange({
+    required String currentPassword,
+    required String newPassword,
+    required String accessToken,
+  }) {
+    return _post('/users/request-password-change', {
+      'currentPassword': currentPassword,
+      'newPassword': newPassword,
+    }, accessToken: accessToken);
+  }
+
+  Future<Map<String, dynamic>> resendPasswordChangeCode(String accessToken) {
+    return _post(
+      '/users/resend-password-change-code',
+      const {},
+      accessToken: accessToken,
+    );
+  }
+
+  Future<Map<String, dynamic>> confirmPasswordChange({
+    required String code,
+    required String accessToken,
+  }) {
+    return _post('/users/confirm-password-change', {
+      'code': code,
+    }, accessToken: accessToken);
   }
 
   Future<String> verifyPasswordResetCode(VerifyResetCodeDto dto) async {
@@ -76,11 +110,14 @@ class UserService {
 
   Future<Map<String, dynamic>> _post(
     String path,
-    Map<String, dynamic> payload,
-  ) async {
+    Map<String, dynamic> payload, {
+    String? accessToken,
+  }) async {
+    final headers = <String, String>{'Content-Type': 'application/json'};
+    if (accessToken != null) headers['Authorization'] = 'Bearer $accessToken';
     final response = await _client.post(
       Uri.parse('$_baseUrl$path'),
-      headers: const {'Content-Type': 'application/json'},
+      headers: headers,
       body: jsonEncode(payload),
     );
 

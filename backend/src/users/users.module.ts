@@ -17,7 +17,7 @@ import { UsersService } from './users.service';
         secret:
           configService.get<string>('JWT_SECRET') ??
           'chargini-development-jwt-secret-change-me',
-        signOptions: { expiresIn: '7d' },
+        signOptions: { expiresIn: '30m' },
       }),
     }),
   ],

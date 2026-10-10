@@ -2,17 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../DTOs/forgot_password_dto.dart';
+import '../../DTOs/user_profile_dto.dart';
 import '../../DTOs/verify_reset_code_dto.dart';
+import '../../Services/auth_session_service.dart';
 import '../../Services/user_service.dart';
 import '../../UI_Components/chargini_auth_components.dart';
+import '../user/user_routes.dart';
 import 'auth_routes.dart';
 
 class VerificationCodeScreen extends StatefulWidget {
   const VerificationCodeScreen({super.key});
 
   @override
-  State<VerificationCodeScreen> createState() =>
-      _VerificationCodeScreenState();
+  State<VerificationCodeScreen> createState() => _VerificationCodeScreenState();
 }
 
 class _VerificationCodeScreenState extends State<VerificationCodeScreen> {
@@ -53,9 +55,14 @@ class _VerificationCodeScreenState extends State<VerificationCodeScreen> {
       return;
     }
 
-    final email = _emailFromArguments(context);
     setState(() => _isSubmitting = true);
     try {
+      if (_isPasswordChangeFlow(context)) {
+        await _confirmPasswordChange();
+        return;
+      }
+
+      final email = _emailFromArguments(context);
       final resetToken = await _userService.verifyPasswordResetCode(
         VerifyResetCodeDto(email: email, code: _codeController.text),
       );
@@ -79,13 +86,18 @@ class _VerificationCodeScreenState extends State<VerificationCodeScreen> {
   }
 
   Future<void> _resendCode() async {
+    final passwordChangeFlow = _isPasswordChangeFlow(context);
+    final email = _emailFromArguments(context);
+    final accessToken = AuthSessionService.current?.accessToken ?? '';
     _codeController.clear();
     _codeFocusNode.requestFocus();
     setState(() => _isResending = true);
     try {
-      final response = await _userService.requestPasswordReset(
-        ForgotPasswordDto(email: _emailFromArguments(context)),
-      );
+      final response = passwordChangeFlow
+          ? await _userService.resendPasswordChangeCode(accessToken)
+          : await _userService.requestPasswordReset(
+              ForgotPasswordDto(email: email),
+            );
       if (!mounted) return;
       final debugCode = response['debugCode']?.toString();
       ScaffoldMessenger.of(context).showSnackBar(
@@ -114,6 +126,48 @@ class _VerificationCodeScreenState extends State<VerificationCodeScreen> {
     return arguments is String ? arguments : '';
   }
 
+  bool _isPasswordChangeFlow(BuildContext context) {
+    final arguments = ModalRoute.of(context)?.settings.arguments;
+    return arguments is Map && arguments['flow'] == 'passwordChange';
+  }
+
+  Future<void> _confirmPasswordChange() async {
+    final currentSession = AuthSessionService.current;
+    if (currentSession == null) {
+      await AuthSessionService.clear();
+      return;
+    }
+
+    final response = await _userService.confirmPasswordChange(
+      code: _codeController.text,
+      accessToken: currentSession.accessToken,
+    );
+    final rawUser = response['user'];
+    final user = rawUser is Map
+        ? UserProfileDto.fromJson(Map<String, dynamic>.from(rawUser))
+        : currentSession.user;
+    final refreshedSession = AuthSession.fromResponse(
+      response,
+      user: user,
+      rememberMe: currentSession.rememberMe,
+    );
+    await AuthSessionService.activate(refreshedSession);
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Votre mot de passe a été modifié avec succès.'),
+        backgroundColor: CharginiColors.green,
+      ),
+    );
+    Navigator.pushNamedAndRemoveUntil(
+      context,
+      UserRoutes.profile,
+      (route) => false,
+      arguments: refreshedSession,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final arguments = ModalRoute.of(context)?.settings.arguments;
@@ -121,6 +175,7 @@ class _VerificationCodeScreenState extends State<VerificationCodeScreen> {
     final debugCode = arguments is Map
         ? arguments['debugCode']?.toString()
         : null;
+    final passwordChangeFlow = _isPasswordChangeFlow(context);
 
     return Scaffold(
       body: SafeArea(
@@ -140,14 +195,16 @@ class _VerificationCodeScreenState extends State<VerificationCodeScreen> {
                         height: 62,
                         child: Stack(
                           alignment: Alignment.center,
-                          children: const [
+                          children: [
                             Positioned(
                               left: 0,
                               child: CharginiBackButton(
-                                fallbackRoute: AuthRoutes.forgotPassword,
+                                fallbackRoute: passwordChangeFlow
+                                    ? UserRoutes.changePassword
+                                    : AuthRoutes.forgotPassword,
                               ),
                             ),
-                            Positioned(
+                            const Positioned(
                               left: 72,
                               right: 0,
                               child: FittedBox(
@@ -237,7 +294,9 @@ class _VerificationCodeScreenState extends State<VerificationCodeScreen> {
                           foregroundColor: CharginiColors.green,
                         ),
                         child: Text(
-                          _isResending ? 'Envoi en cours...' : 'Renvoyer le code',
+                          _isResending
+                              ? 'Envoi en cours...'
+                              : 'Renvoyer le code',
                           style: const TextStyle(
                             fontSize: 17,
                             fontWeight: FontWeight.w800,
@@ -246,9 +305,7 @@ class _VerificationCodeScreenState extends State<VerificationCodeScreen> {
                       ),
                       const SizedBox(height: 16),
                       CharginiPrimaryButton(
-                        label: _isSubmitting
-                            ? 'Vérification...'
-                            : 'Continuer',
+                        label: _isSubmitting ? 'Vérification...' : 'Continuer',
                         onPressed: _isSubmitting ? null : _continue,
                         showArrow: !_isSubmitting,
                       ),
@@ -260,15 +317,33 @@ class _VerificationCodeScreenState extends State<VerificationCodeScreen> {
                           ),
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 12),
-                            child: AuthFooterLink(
-                              prefix: 'Retour à la ',
-                              action: 'connexion',
-                              onTap: () => Navigator.pushNamedAndRemoveUntil(
-                                context,
-                                AuthRoutes.login,
-                                (route) => false,
-                              ),
-                            ),
+                            child: passwordChangeFlow
+                                ? TextButton(
+                                    onPressed: () =>
+                                        Navigator.pushNamedAndRemoveUntil(
+                                          context,
+                                          UserRoutes.profile,
+                                          (route) => false,
+                                          arguments: AuthSessionService.current,
+                                        ),
+                                    child: const Text(
+                                      'Retour au profil',
+                                      style: TextStyle(
+                                        color: CharginiColors.green,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  )
+                                : AuthFooterLink(
+                                    prefix: 'Retour à la ',
+                                    action: 'connexion',
+                                    onTap: () =>
+                                        Navigator.pushNamedAndRemoveUntil(
+                                          context,
+                                          AuthRoutes.login,
+                                          (route) => false,
+                                        ),
+                                  ),
                           ),
                           const Expanded(
                             child: Divider(color: CharginiColors.border),
@@ -371,4 +446,3 @@ class _CodeInput extends StatelessWidget {
     );
   }
 }
-

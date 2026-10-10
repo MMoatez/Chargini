@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../DTOs/login_dto.dart';
+import '../../DTOs/user_profile_dto.dart';
+import '../../Services/auth_session_service.dart';
 import '../../Services/user_service.dart';
 import '../../UI_Components/chargini_auth_components.dart';
+import '../user/user_routes.dart';
 import 'auth_routes.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -37,26 +39,28 @@ class _LoginScreenState extends State<LoginScreen> {
         LoginDto(
           email: _emailController.text,
           password: _passwordController.text,
+          rememberMe: _rememberMe,
         ),
       );
-      final token = response['accessToken']?.toString();
-      if (token == null || token.isEmpty) {
-        throw const UserServiceException('Jeton de connexion manquant.');
+      final rawUser = response['user'];
+      if (rawUser is! Map) {
+        throw const UserServiceException('Profil utilisateur manquant.');
       }
+      final user = UserProfileDto.fromJson(Map<String, dynamic>.from(rawUser));
 
-      final preferences = await SharedPreferences.getInstance();
-      if (_rememberMe) {
-        await preferences.setString('auth_access_token', token);
-      } else {
-        await preferences.remove('auth_access_token');
-      }
+      final session = AuthSession.fromResponse(
+        response,
+        user: user,
+        rememberMe: _rememberMe,
+      );
+      await AuthSessionService.activate(session);
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Connexion réussie.'),
-          backgroundColor: CharginiColors.green,
-        ),
+      await Navigator.pushNamedAndRemoveUntil(
+        context,
+        UserRoutes.profile,
+        (route) => false,
+        arguments: session,
       );
     } on UserServiceException catch (error) {
       if (mounted) {
@@ -233,5 +237,4 @@ class _LoginScreenState extends State<LoginScreen> {
       ),
     );
   }
-
 }

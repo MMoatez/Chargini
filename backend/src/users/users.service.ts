@@ -52,7 +52,7 @@ export class UsersService {
       .exec();
   }
 
-  async login(rawEmail: string, password: string) {
+  async login(rawEmail: string, password: string, rememberMe: boolean) {
     const email = rawEmail.trim().toLowerCase();
     const user = await this.userModel
       .findOne({ email })
@@ -63,13 +63,126 @@ export class UsersService {
       throw new UnauthorizedException('Adresse e-mail ou mot de passe incorrect.');
     }
 
-    const accessToken = await this.jwtService.signAsync({
-      sub: user.id,
-      email: user.email,
-      role: user.role,
-    });
+    return this.createSession(user, rememberMe);
+  }
 
-    return { accessToken, user: this.toPublicUser(user) };
+  async refreshSession(refreshToken: string) {
+    const refreshTokenHash = this.hashRefreshToken(refreshToken);
+    const user = await this.userModel
+      .findOne({
+        refreshTokenHash,
+        refreshTokenExpiresAt: { $gt: new Date() },
+      })
+      .select('+refreshTokenHash +refreshTokenExpiresAt')
+      .exec();
+
+    if (!user?.refreshTokenExpiresAt) {
+      throw new UnauthorizedException('Votre session a expiré.');
+    }
+
+    return this.createSession(user, true, user.refreshTokenExpiresAt);
+  }
+
+  async logout(refreshToken: string) {
+    await this.userModel
+      .updateOne(
+        { refreshTokenHash: this.hashRefreshToken(refreshToken) },
+        { $unset: { refreshTokenHash: 1, refreshTokenExpiresAt: 1 } },
+      )
+      .exec();
+    return { message: 'Déconnexion réussie.' };
+  }
+
+  async requestPasswordChange(
+    authorization: string | undefined,
+    currentPassword: string,
+    newPassword: string,
+  ) {
+    const userId = await this.userIdFromAuthorization(authorization);
+    const user = await this.userModel
+      .findById(userId)
+      .select('+passwordHash')
+      .exec();
+    if (!user || !(await bcrypt.compare(currentPassword, user.passwordHash))) {
+      throw new UnauthorizedException('Le mot de passe actuel est incorrect.');
+    }
+    if (await bcrypt.compare(newPassword, user.passwordHash)) {
+      throw new BadRequestException(
+        'Le nouveau mot de passe doit être différent du mot de passe actuel.',
+      );
+    }
+
+    user.pendingPasswordHash = await bcrypt.hash(newPassword, 12);
+    return this.issuePasswordChangeCode(user);
+  }
+
+  async resendPasswordChangeCode(authorization: string | undefined) {
+    const userId = await this.userIdFromAuthorization(authorization);
+    const user = await this.userModel
+      .findById(userId)
+      .select('+pendingPasswordHash')
+      .exec();
+    if (!user?.pendingPasswordHash) {
+      throw new BadRequestException(
+        'Aucune demande de changement de mot de passe n’est en attente.',
+      );
+    }
+    return this.issuePasswordChangeCode(user);
+  }
+
+  async confirmPasswordChange(
+    authorization: string | undefined,
+    code: string,
+  ) {
+    const userId = await this.userIdFromAuthorization(authorization);
+    const user = await this.userModel
+      .findById(userId)
+      .select(
+        '+pendingPasswordHash +passwordChangeCodeHash +passwordChangeCodeExpiresAt +passwordChangeCodeAttempts +refreshTokenExpiresAt',
+      )
+      .exec();
+    const invalidCode = new BadRequestException(
+      'Le code est invalide ou a expiré.',
+    );
+    if (
+      !user?.pendingPasswordHash ||
+      !user.passwordChangeCodeHash ||
+      !user.passwordChangeCodeExpiresAt ||
+      user.passwordChangeCodeExpiresAt.getTime() <= Date.now()
+    ) {
+      throw invalidCode;
+    }
+
+    const attempts = user.passwordChangeCodeAttempts ?? 0;
+    if (attempts >= 5) throw invalidCode;
+    if (!this.secretsMatch(user.passwordChangeCodeHash, code)) {
+      user.passwordChangeCodeAttempts = attempts + 1;
+      if (user.passwordChangeCodeAttempts >= 5) {
+        user.passwordChangeCodeHash = undefined;
+        user.passwordChangeCodeExpiresAt = undefined;
+      }
+      await user.save();
+      throw invalidCode;
+    }
+
+    const existingRefreshExpiry = user.refreshTokenExpiresAt;
+    user.passwordHash = user.pendingPasswordHash;
+    user.pendingPasswordHash = undefined;
+    user.passwordChangeCodeHash = undefined;
+    user.passwordChangeCodeExpiresAt = undefined;
+    user.passwordChangeCodeAttempts = 0;
+
+    const session = await this.createSession(
+      user,
+      true,
+      existingRefreshExpiry,
+    );
+    try {
+      await this.mailService.sendPasswordChangedNotification(user.email);
+    } catch (error) {
+      console.warn('Password changed, but the notification email failed.', error);
+    }
+    return session;
   }
 
   async requestPasswordReset(rawEmail: string) {
@@ -160,6 +273,8 @@ export class UsersService {
     user.passwordHash = await bcrypt.hash(newPassword, 12);
     user.passwordResetTokenHash = undefined;
     user.passwordResetTokenExpiresAt = undefined;
+    user.refreshTokenHash = undefined;
+    user.refreshTokenExpiresAt = undefined;
     await user.save();
 
     return { message: 'Votre mot de passe a été réinitialisé avec succès.' };
@@ -172,6 +287,78 @@ export class UsersService {
     return createHmac('sha256', secret).update(value).digest('hex');
   }
 
+  private hashRefreshToken(value: string) {
+    const secret =
+      this.configService.get<string>('JWT_SECRET') ??
+      'chargini-development-jwt-secret-change-me';
+    return createHmac('sha256', secret).update(value).digest('hex');
+  }
+
+  private async userIdFromAuthorization(authorization?: string) {
+    const match = authorization?.match(/^Bearer\s+(.+)$/i);
+    if (!match) throw new UnauthorizedException('Authentification requise.');
+    try {
+      const payload = await this.jwtService.verifyAsync<{ sub?: string }>(
+        match[1],
+      );
+      if (!payload.sub) throw new Error('Missing subject');
+      return payload.sub;
+    } catch (_) {
+      throw new UnauthorizedException('Votre session a expiré.');
+    }
+  }
+
+  private async issuePasswordChangeCode(user: UserDocument) {
+    const code = randomInt(0, 1_000_000).toString().padStart(6, '0');
+    user.passwordChangeCodeHash = this.hashResetSecret(code);
+    user.passwordChangeCodeExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
+    user.passwordChangeCodeAttempts = 0;
+    await user.save();
+
+    const response = {
+      message: 'Un code de vérification a été envoyé à votre adresse e-mail.',
+    };
+    const emailSent = await this.mailService.sendPasswordChangeCode(
+      user.email,
+      code,
+    );
+    if (!emailSent && this.configService.get('NODE_ENV') !== 'production') {
+      return { ...response, debugCode: code };
+    }
+    return response;
+  }
+
+  private async createSession(
+    user: UserDocument,
+    rememberMe: boolean,
+    existingRefreshExpiry?: Date,
+  ) {
+    const accessToken = await this.jwtService.signAsync({
+      sub: user.id,
+      email: user.email,
+      role: user.role,
+    });
+    const refreshToken = randomBytes(48).toString('hex');
+    const refreshTokenExpiresAt =
+      existingRefreshExpiry ??
+      new Date(
+        Date.now() +
+          (rememberMe ? 30 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000),
+      );
+
+    user.refreshTokenHash = this.hashRefreshToken(refreshToken);
+    user.refreshTokenExpiresAt = refreshTokenExpiresAt;
+    await user.save();
+
+    return {
+      accessToken,
+      accessTokenExpiresAt: new Date(Date.now() + 30 * 60 * 1000),
+      refreshToken,
+      refreshTokenExpiresAt,
+      user: this.toPublicUser(user),
+    };
+  }
+
   private secretsMatch(storedHash: string, value: string) {
     const candidate = Buffer.from(this.hashResetSecret(value), 'hex');
     const stored = Buffer.from(storedHash, 'hex');
@@ -180,7 +367,21 @@ export class UsersService {
 
   private toPublicUser(user: UserDocument) {
     const object = user.toObject();
-    const { passwordHash: _passwordHash, ...publicUser } = object;
+    const {
+      passwordHash: _passwordHash,
+      passwordResetCodeHash: _passwordResetCodeHash,
+      passwordResetCodeExpiresAt: _passwordResetCodeExpiresAt,
+      passwordResetCodeAttempts: _passwordResetCodeAttempts,
+      passwordResetTokenHash: _passwordResetTokenHash,
+      passwordResetTokenExpiresAt: _passwordResetTokenExpiresAt,
+      refreshTokenHash: _refreshTokenHash,
+      refreshTokenExpiresAt: _refreshTokenExpiresAt,
+      pendingPasswordHash: _pendingPasswordHash,
+      passwordChangeCodeHash: _passwordChangeCodeHash,
+      passwordChangeCodeExpiresAt: _passwordChangeCodeExpiresAt,
+      passwordChangeCodeAttempts: _passwordChangeCodeAttempts,
+      ...publicUser
+    } = object;
     return publicUser;
   }
 }

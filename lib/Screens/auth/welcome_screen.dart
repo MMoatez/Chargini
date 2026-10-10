@@ -80,9 +80,9 @@ class WelcomeScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 8),
                     TextButton(
-                      onPressed: () => _showComingSoon(
+                      onPressed: () => Navigator.pushNamed(
                         context,
-                        'La récupération du mot de passe sera connectée au backend.',
+                        AuthRoutes.forgotPassword,
                       ),
                       style: TextButton.styleFrom(
                         foregroundColor: CharginiColors.green,

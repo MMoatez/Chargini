@@ -104,10 +104,7 @@ void main() {
 
   test('verifyPasswordResetCode returns the reset token', () async {
     final client = MockClient((request) async {
-      expect(
-        request.url.toString(),
-        'http://api.test/users/verify-reset-code',
-      );
+      expect(request.url.toString(), 'http://api.test/users/verify-reset-code');
       final body = jsonDecode(request.body) as Map<String, dynamic>;
       expect(body, {'email': 'yassin@example.com', 'code': '123456'});
       return http.Response(
@@ -119,10 +116,7 @@ void main() {
     final service = UserService(client: client, baseUrl: 'http://api.test');
 
     final token = await service.verifyPasswordResetCode(
-      const VerifyResetCodeDto(
-        email: 'yassin@example.com',
-        code: '123456',
-      ),
+      const VerifyResetCodeDto(email: 'yassin@example.com', code: '123456'),
     );
 
     expect(token, 'reset-token');
@@ -160,6 +154,7 @@ void main() {
       expect(body, {
         'email': 'yassin@example.com',
         'password': 'NewPassword123!',
+        'rememberMe': true,
       });
       return http.Response(
         jsonEncode({
@@ -176,9 +171,99 @@ void main() {
       const LoginDto(
         email: 'YASSIN@EXAMPLE.COM',
         password: 'NewPassword123!',
+        rememberMe: true,
       ),
     );
 
     expect(response['accessToken'], 'jwt-token');
+  });
+
+  test('refreshSession rotates the refresh token', () async {
+    final client = MockClient((request) async {
+      expect(request.url.toString(), 'http://api.test/users/refresh-token');
+      expect(jsonDecode(request.body), {
+        'refreshToken': List.filled(96, 'r').join(),
+      });
+      return http.Response(
+        jsonEncode({'accessToken': 'new-jwt', 'refreshToken': 'new-refresh'}),
+        201,
+        headers: {'content-type': 'application/json'},
+      );
+    });
+    final service = UserService(client: client, baseUrl: 'http://api.test');
+
+    final response = await service.refreshSession(List.filled(96, 'r').join());
+
+    expect(response['accessToken'], 'new-jwt');
+  });
+
+  test('logout revokes the refresh token', () async {
+    final client = MockClient((request) async {
+      expect(request.url.toString(), 'http://api.test/users/logout');
+      expect(jsonDecode(request.body), {
+        'refreshToken': List.filled(96, 'r').join(),
+      });
+      return http.Response(
+        jsonEncode({'message': 'Déconnexion réussie.'}),
+        201,
+        headers: {'content-type': 'application/json'},
+      );
+    });
+    final service = UserService(client: client, baseUrl: 'http://api.test');
+
+    await service.logout(List.filled(96, 'r').join());
+  });
+
+  test('requestPasswordChange sends passwords with the access JWT', () async {
+    final client = MockClient((request) async {
+      expect(
+        request.url.toString(),
+        'http://api.test/users/request-password-change',
+      );
+      expect(request.headers['authorization'], 'Bearer access-jwt');
+      expect(jsonDecode(request.body), {
+        'currentPassword': 'Current123!',
+        'newPassword': 'NewPassword123!',
+      });
+      return http.Response(
+        jsonEncode({'message': 'Code envoyé'}),
+        201,
+        headers: {'content-type': 'application/json'},
+      );
+    });
+    final service = UserService(client: client, baseUrl: 'http://api.test');
+
+    await service.requestPasswordChange(
+      currentPassword: 'Current123!',
+      newPassword: 'NewPassword123!',
+      accessToken: 'access-jwt',
+    );
+  });
+
+  test('confirmPasswordChange sends the code with the access JWT', () async {
+    final client = MockClient((request) async {
+      expect(
+        request.url.toString(),
+        'http://api.test/users/confirm-password-change',
+      );
+      expect(request.headers['authorization'], 'Bearer access-jwt');
+      expect(jsonDecode(request.body), {'code': '123456'});
+      return http.Response(
+        jsonEncode({
+          'accessToken': 'new-access-jwt',
+          'refreshToken': 'new-refresh-token',
+        }),
+        201,
+        headers: {'content-type': 'application/json'},
+      );
+    });
+    final service = UserService(client: client, baseUrl: 'http://api.test');
+
+    final response = await service.confirmPasswordChange(
+      code: '123456',
+      accessToken: 'access-jwt',
+    );
+
+    expect(response['accessToken'], 'new-access-jwt');
   });
 }
